@@ -22,9 +22,6 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.jgrapht.Graph;
-import org.jgrapht.UndirectedGraph;
-import org.jgrapht.graph.DefaultEdge;
 
 import sig.plugin.TwosideKeeper.PlayerStructure;
 import sig.plugin.TwosideKeeper.TwosideKeeper;
@@ -75,8 +72,10 @@ public class ItemCubeUtils {
 				if (InventoryUtils.InventoryContainSameMaterial(inv, it)) {
 					//TwosideKeeper.log("Goes in this cube. Adding item "+it, 0);
 					//ItemCube.addToViewersOfItemCube(id,it,null);
-					final ItemStack origitem = it.clone();
+					//TwosideKeeper.log("Inventory Before: "+Arrays.toString(cube_inv.getContents()), 0);
 					HashMap<Integer,ItemStack> extras = cube_inv.addItem(it);
+					//TwosideKeeper.log("Inventory After: "+Arrays.toString(cube_inv.getContents()), 0);
+					//TwosideKeeper.log("Extras: "+TextUtils.outputHashmap(extras), 0);
 					if (extras.size()==0) {
 						List<ItemStack> itemslist = new ArrayList<ItemStack>();
 						List<ItemContainer> itemcube_list = new ArrayList<ItemContainer>();
@@ -101,7 +100,6 @@ public class ItemCubeUtils {
 							TwosideKeeper.itemCube_saveConfig(id, itemslist);
 			        		TwosideKeeper.itemcube_updates.put(id, itemcube_list);//This Item Cube can be saved.
 						}
-						
 		    			//ItemCubeUtils.addItemCubeToGraphFromCube(id, it, (Player)cube_inv.getHolder());
 					} else {
 						for (ItemStack i : extras.values()) {

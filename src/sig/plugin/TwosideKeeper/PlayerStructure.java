@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -20,9 +21,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.potion.PotionEffect;
-import org.jgrapht.UndirectedGraph;
-import org.jgrapht.graph.DefaultEdge;
-import org.jgrapht.graph.SimpleGraph;
 
 import sig.plugin.TwosideKeeper.HelperStructures.BowMode;
 import sig.plugin.TwosideKeeper.HelperStructures.DeathStructure;
@@ -112,6 +110,7 @@ public class PlayerStructure {
 	public int swiftaegisamt=0;
 	public PlayerMode lastmode=PlayerMode.NORMAL;
 	public List<PotionEffect> lasteffectlist=null;
+	public HashMap<String,Buff> lastbufflist=new HashMap<String,Buff>();
 	public boolean stealthmode=false;
 	public long lastcompassnotification=0;
 	public boolean endnotification=false;
@@ -148,6 +147,8 @@ public class PlayerStructure {
 	public long icewandused = TwosideKeeper.getServerTickTime();
 	public PlayerMode playermode_on_death=PlayerMode.NORMAL;
 	public long lastusedearthwave = TwosideKeeper.getServerTickTime();
+	public long lastusedwindslash = TwosideKeeper.getServerTickTime();
+	public long lastusedbeastwithin = TwosideKeeper.getServerTickTime();
 	
 	public long iframetime = 0;
 	
@@ -197,12 +198,17 @@ public class PlayerStructure {
 	public boolean vacuumsuckup=true;
 	public boolean equipweapons=true;
 	public boolean equiparmor=true;
+	public long lastpotionparticles=0;
 	public Location restartLoc = null; //Set to a value when the player has to be re-teleported after being controlled by a camera.
+	public long lastPoisonTick=0;
+	public long lastShrapnelTick=0;
 	
 	List<ItemStack> equipmentset = new ArrayList<ItemStack>();
 	
 	public HashMap<Material,List<Integer>> filtercubestructure = new HashMap<Material, List<Integer>>();
 	public List<UUID> ignoreItemsList = new ArrayList<UUID>();
+	public HashMap<String,Buff> buffs = new HashMap<String,Buff>();
+	public HashMap<String,HashMap<Integer,Integer>> itemsets = new HashMap<String,HashMap<Integer,Integer>>(); //HashMap<"Set Name",HashMap<"Tier","Amt">>
 	
 	//Needs the instance of the player object to get all other info. Only to be called at the beginning.
 	@SuppressWarnings("deprecation")
@@ -252,7 +258,9 @@ public class PlayerStructure {
 			this.last_rejuvenate=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
 			this.lastassassinatetime=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
 			this.lastlifesavertime=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
+			this.lastusedwindslash=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
 			this.icewandused=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
+			this.lastusedbeastwithin=(TwosideKeeper.getServerType()==ServerType.MAIN)?TwosideKeeper.getServerTickTime():0;
 			this.damagedata = new DamageLogger(p);
 			this.damagelogging=false;
 			this.isPlayingSpleef=false;
@@ -307,24 +315,26 @@ public class PlayerStructure {
 			
 			//Joined always gets set to new time.
 			this.joined = serverTickTime;
-			setDefaultCooldowns(p);
 		}
 	}
 	
-	private void setDefaultCooldowns(Player p) {
-		aPlugin.API.sendCooldownPacket(p, Material.BOW, GenericFunctions.GetRemainingCooldownTime(p, last_dodge, TwosideKeeper.DODGE_COOLDOWN));
-		applyCooldownToAllTypes(p,"HOE",GenericFunctions.GetRemainingCooldownTime(p, last_deathmark, TwosideKeeper.DEATHMARK_COOLDOWN));
-		applyCooldownToAllTypes(p,"SPADE",GenericFunctions.GetRemainingCooldownTime(p, lastusedearthwave, TwosideKeeper.EARTHWAVE_COOLDOWN));
-		applyCooldownToAllTypes(p,"SWORD",GenericFunctions.GetRemainingCooldownTime(p, last_strikerspell, TwosideKeeper.LINEDRIVE_COOLDOWN));
-		aPlugin.API.sendCooldownPacket(p, Material.SHIELD, GenericFunctions.GetRemainingCooldownTime(p, last_rejuvenate, TwosideKeeper.REJUVENATE_COOLDOWN));
-		aPlugin.API.sendCooldownPacket(p, Material.SKULL_ITEM, GenericFunctions.GetRemainingCooldownTime(p, lastlifesavertime, TwosideKeeper.LIFESAVER_COOLDOWN));
-		aPlugin.API.sendCooldownPacket(p, Material.CHORUS_FLOWER, GenericFunctions.GetRemainingCooldownTime(p, lastlifesavertime, TwosideKeeper.LIFESAVER_COOLDOWN));
-		aPlugin.API.sendCooldownPacket(p, Material.WATCH, GenericFunctions.GetRemainingCooldownTime(p, icewandused, TwosideKeeper.ICEWAND_COOLDOWN));
-		aPlugin.API.sendCooldownPacket(p, Material.RAW_FISH, GenericFunctions.GetRemainingCooldownTime(p, lastcandyconsumed, 40));
-		aPlugin.API.sendCooldownPacket(p, Material.GOLDEN_APPLE, GenericFunctions.GetRemainingCooldownTime(p, lastrevivecandyconsumed, 200));
+	public static void setDefaultCooldowns(Player p) {
+		PlayerStructure pd = PlayerStructure.GetPlayerStructure(p);
+		aPlugin.API.sendCooldownPacket(p, Material.BOW, GenericFunctions.GetRemainingCooldownTime(p, pd.last_dodge, TwosideKeeper.DODGE_COOLDOWN));
+		applyCooldownToAllTypes(p,"HOE",GenericFunctions.GetRemainingCooldownTime(p, pd.last_deathmark, TwosideKeeper.DEATHMARK_COOLDOWN));
+		applyCooldownToAllTypes(p,"SPADE",GenericFunctions.GetRemainingCooldownTime(p, pd.lastusedearthwave, TwosideKeeper.EARTHWAVE_COOLDOWN));
+		applyCooldownToAllTypes(p,"SWORD",GenericFunctions.GetRemainingCooldownTime(p, pd.last_strikerspell, TwosideKeeper.LINEDRIVE_COOLDOWN));
+		aPlugin.API.sendCooldownPacket(p, Material.SHIELD, GenericFunctions.GetRemainingCooldownTime(p, pd.last_rejuvenate, TwosideKeeper.REJUVENATE_COOLDOWN));
+		aPlugin.API.sendCooldownPacket(p, Material.SKULL_ITEM, GenericFunctions.GetRemainingCooldownTime(p, pd.lastlifesavertime, TwosideKeeper.LIFESAVER_COOLDOWN));
+		aPlugin.API.sendCooldownPacket(p, Material.CHORUS_FLOWER, GenericFunctions.GetRemainingCooldownTime(p, pd.lastlifesavertime, TwosideKeeper.LIFESAVER_COOLDOWN));
+		aPlugin.API.sendCooldownPacket(p, Material.WATCH, GenericFunctions.GetRemainingCooldownTime(p, pd.icewandused, TwosideKeeper.ICEWAND_COOLDOWN));
+		aPlugin.API.sendCooldownPacket(p, Material.RAW_FISH, GenericFunctions.GetRemainingCooldownTime(p, pd.lastcandyconsumed, 40));
+		aPlugin.API.sendCooldownPacket(p, Material.GOLDEN_APPLE, GenericFunctions.GetRemainingCooldownTime(p, pd.lastrevivecandyconsumed, 200));
+		applyCooldownToAllTypes(p,"SWORD",GenericFunctions.GetRemainingCooldownTime(p, pd.lastusedwindslash, TwosideKeeper.WINDSLASH_COOLDOWN));
+		applyCooldownToAllTypes(p,"SWORD",GenericFunctions.GetRemainingCooldownTime(p, pd.lastusedbeastwithin, TwosideKeeper.BEASTWITHIN_COOLDOWN));
 	}
 
-	private void applyCooldownToAllTypes(Player p, String item, int cooldown) {
+	private static void applyCooldownToAllTypes(Player p, String item, int cooldown) {
 		aPlugin.API.sendCooldownPacket(p, Material.valueOf("WOOD_"+item), cooldown);
 		aPlugin.API.sendCooldownPacket(p, Material.valueOf("IRON_"+item), cooldown);
 		aPlugin.API.sendCooldownPacket(p, Material.valueOf("STONE_"+item), cooldown);
@@ -402,6 +412,15 @@ public class PlayerStructure {
 		workable.set("COOLDOWN_lastmock", last_mock);
 		workable.set("COOLDOWN_lastassassinatetime", lastassassinatetime);
 		workable.set("COOLDOWN_lastlifesavertime", lastlifesavertime);
+		workable.set("COOLDOWN_lastusedwindslash", lastusedwindslash);
+		workable.set("COOLDOWN_lastusedbeastwithin", lastusedbeastwithin);
+		int buffcounter=0;
+		for (String key : buffs.keySet()) {
+			Buff b = buffs.get(key);
+			SaveBuff(workable, buffcounter, key, b);
+			buffcounter++;
+		}
+		workable.set("BUFFCOUNT", buffcounter);
 		if (restartLoc!=null) {
 			workable.set("restartloc_x", restartLoc.getX());
 			workable.set("restartloc_y", restartLoc.getY());
@@ -416,6 +435,16 @@ public class PlayerStructure {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+
+	private void SaveBuff(FileConfiguration workable, int buffcounter, String key, Buff b) {
+		workable.set("BUFF"+(buffcounter)+"_key", key);
+		workable.set("BUFF"+(buffcounter)+"_name", b.getDisplayName());
+		workable.set("BUFF"+(buffcounter)+"_duration", b.getRemainingBuffTime());
+		workable.set("BUFF"+(buffcounter)+"_amplifier", b.getAmplifier());
+		workable.set("BUFF"+(buffcounter)+"_color", b.getBuffParticleColor().asRGB());
+		workable.set("BUFF"+(buffcounter)+"_icon", b.getBuffIcon());
+		workable.set("BUFF"+(buffcounter)+"_isGoodBuff", b.isGoodBuff());
 	}
 
 	//Create a config for the player.
@@ -478,6 +507,9 @@ public class PlayerStructure {
 		workable.addDefault("COOLDOWN_lastmock", last_mock);
 		workable.addDefault("COOLDOWN_lastassassinatetime", lastassassinatetime);
 		workable.addDefault("COOLDOWN_lastlifesavertime", lastlifesavertime);
+		workable.addDefault("COOLDOWN_lastusedwindslash", lastusedwindslash);
+		workable.addDefault("COOLDOWN_lastusedbeastwithin", lastusedbeastwithin);
+		workable.addDefault("BUFFCOUNT", 0);
 		
 		workable.options().copyDefaults();
 		
@@ -533,12 +565,34 @@ public class PlayerStructure {
 		this.last_mock = workable.getLong("COOLDOWN_lastmock");
 		this.lastassassinatetime = workable.getLong("COOLDOWN_lastassassinatetime");
 		this.lastlifesavertime = workable.getLong("COOLDOWN_lastlifesavertime");
+		this.lastusedwindslash = workable.getLong("COOLDOWN_lastusedwindslash");
+		this.lastusedbeastwithin = workable.getLong("COOLDOWN_lastusedbeastwithin");
 		this.vacuumsuckup = workable.getBoolean("vacuumsuckup");
 		this.equipweapons = workable.getBoolean("equipweapons");
 		this.equiparmor = workable.getBoolean("equiparmor");
 		String tempworld = workable.getString("restartloc_world");
 		if (tempworld!=null && !tempworld.equalsIgnoreCase("null")) {
 			this.restartLoc = new Location(Bukkit.getWorld(tempworld),workable.getDouble("restartloc_x"),workable.getDouble("restartloc_y"),workable.getDouble("restartloc_z"));
+		}
+		
+		int buffcount = workable.getInt("BUFFCOUNT");
+		for (int i=0;i<buffcount;i++) {
+			/*Buff.addBuff(p, workable.getString("BUFF"+i+"_key"), new Buff(
+					workable.getString("BUFF"+i+"_name"),
+					workable.getLong("BUFF"+i+"_duration"),
+					workable.getInt("BUFF"+i+"_amplifier"),
+					Color.fromRGB(workable.getInt("BUFF"+i+"_color")),
+					workable.getString("BUFF"+i+"_icon"),
+					workable.getBoolean("BUFF"+i+"_isGoodBuff")
+					));*/
+			buffs.put(workable.getString("BUFF"+i+"_key"), new Buff(
+					workable.getString("BUFF"+i+"_name"),
+					workable.getLong("BUFF"+i+"_duration"),
+					workable.getInt("BUFF"+i+"_amplifier"),
+					Color.fromRGB(workable.getInt("BUFF"+i+"_color")),
+					workable.getString("BUFF"+i+"_icon"),
+					workable.getBoolean("BUFF"+i+"_isGoodBuff")
+					));
 		}
 		
 		if (this.hasDied) {

@@ -1,7 +1,10 @@
 package sig.plugin.TwosideKeeper;
 
+import java.io.File;
+
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
+import org.bukkit.entity.Player;
 
 public class CustomMonster {
 	protected LivingEntity m;
@@ -32,7 +35,18 @@ public class CustomMonster {
 		}
 	}
 	
+	public static boolean recognizeMonsterConditions(LivingEntity m) {
+		return false;
+	}
+	
 	public void runTick() {
+		
+	}
+	
+	public void customHitHandler() {
+		
+	}
+	public void customHitHandler(double dmg) {
 		
 	}
 }

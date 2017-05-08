@@ -36,6 +36,7 @@ import sig.plugin.TwosideKeeper.HelperStructures.Loot;
 import sig.plugin.TwosideKeeper.HelperStructures.MonsterDifficulty;
 import sig.plugin.TwosideKeeper.HelperStructures.PlayerMode;
 import sig.plugin.TwosideKeeper.HelperStructures.Common.GenericFunctions;
+import sig.plugin.TwosideKeeper.HelperStructures.Utils.APIUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.SoundUtils;
 
 public class EliteZombie extends EliteMonster{
@@ -92,14 +93,17 @@ public class EliteZombie extends EliteMonster{
 
 	protected void createBossHealthbar() {
 		List<Player> currentplayers = bar.getPlayers();
-		for (int i=0;i<currentplayers.size();i++) {
+		/*for (int i=0;i<currentplayers.size();i++) {
 			if (!targetlist.contains(currentplayers.get(i))) {
 				bar.removePlayer(currentplayers.get(i));
 				willpower_bar.removePlayer(currentplayers.get(i));
 			}
-		}
+		}*/
+		bar.removeAll();
+		willpower_bar.removeAll();
 		bar.setProgress(m.getHealth()/m.getMaxHealth());
 		bar.setTitle(GenericFunctions.getDisplayName(m) + ((m.getTarget()!=null && (m.getTarget() instanceof Player))?(ChatColor.DARK_AQUA+" "+arrow+" "+ChatColor.YELLOW+((Player)m.getTarget()).getName()):""));
+		displayHealthbarToNearbyPlayers();
 		for (int i=0;i<targetlist.size();i++) {
 			if (!currentplayers.contains(targetlist.get(i))) {
 				bar.addPlayer(targetlist.get(i));
@@ -521,7 +525,7 @@ public class EliteZombie extends EliteMonster{
 					}
 				}
 				TwosideKeeper.log("Selected block "+b.toString(), 5);
-				if (!aPlugin.API.isExplosionProof(b) && b.getType()!=Material.STAINED_GLASS) {
+				if (!APIUtils.isExplosionProof(b) && b.getType()!=Material.STAINED_GLASS) {
 					Material type = b.getType();
 					Byte data = b.getData();
 					storedblocks.put(b, type);

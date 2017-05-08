@@ -2,6 +2,7 @@ package sig.plugin.TwosideKeeper;
 
 import java.io.File;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.HashMap;
@@ -24,6 +25,7 @@ import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerPickupItemEvent;
@@ -49,12 +51,14 @@ import sig.plugin.TwosideKeeper.HelperStructures.ServerType;
 import sig.plugin.TwosideKeeper.HelperStructures.WorldShop;
 import sig.plugin.TwosideKeeper.HelperStructures.Common.GenericFunctions;
 import sig.plugin.TwosideKeeper.HelperStructures.Effects.LavaPlume;
+import sig.plugin.TwosideKeeper.HelperStructures.Utils.EntityUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.InventoryUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.ItemCubeUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.MessageUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.PlayerUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.SoundUtils;
 import sig.plugin.TwosideKeeper.HolidayEvents.Christmas;
+import sig.plugin.TwosideKeeper.Monster.Dummy;
 
 final class runServerHeartbeat implements Runnable {
 	/**
@@ -81,6 +85,8 @@ final class runServerHeartbeat implements Runnable {
 		//SAVE SERVER SETTINGS.
 		final long serverTickTime = TwosideKeeper.getServerTickTime();
 		long time = System.nanoTime();
+		long totaltime = System.nanoTime();
+		
 		if (serverTickTime-TwosideKeeper.LASTSERVERCHECK>=TwosideKeeper.SERVERCHECKERTICKS) { //15 MINUTES (DEFAULT)
 			if (TwosideKeeper.LAST_DEAL!=Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
 				//This means the deal of the day has to be updated!
@@ -252,6 +258,8 @@ final class runServerHeartbeat implements Runnable {
 					ManagePlayerScoreboardAndHealth(p);
 					TwosideKeeper.HeartbeatLogger.AddEntry("Scoreboard/Health Management", (int)(System.nanoTime()-time));time=System.nanoTime();
 					
+					PerformPoisonTick(p);
+					
 					if (PlayerMode.isBarbarian(p)) {
 						AutoConsumeFoods(p);
 						TwosideKeeper.HeartbeatLogger.AddEntry("Auto Consume Food", (int)(System.nanoTime()-time));time=System.nanoTime();
@@ -297,6 +305,9 @@ final class runServerHeartbeat implements Runnable {
 				
 				adjustMiningFatigue(p);
 				TwosideKeeper.HeartbeatLogger.AddEntry("Adjust Mining Fatigue", (int)(System.nanoTime()-time));time=System.nanoTime();
+				
+				createPotionParticles(p);
+				TwosideKeeper.HeartbeatLogger.AddEntry("Potion Effect Particles", (int)(System.nanoTime()-time));time=System.nanoTime();
 			}
 	    	//TwosideKeeper.outputArmorDurability(p,">");
 		}
@@ -325,6 +336,85 @@ final class runServerHeartbeat implements Runnable {
 		
 		resetPigmanAggro();
 		TwosideKeeper.HeartbeatLogger.AddEntry("Reset Pigman Aggro", (int)(System.nanoTime()-time));time=System.nanoTime();
+		if ((int)(System.nanoTime()-totaltime)/1000000d>50) {
+			TwosideKeeper.log("WARNING! Server heartbeat took longer than 1 tick! "+((int)(System.nanoTime()-totaltime)/1000000d)+"ms", 0);
+		}
+		TwosideKeeper.HeartbeatLogger.AddEntry(ChatColor.LIGHT_PURPLE+"Total Server Heartbeat", (int)(System.nanoTime()-totaltime));totaltime=System.nanoTime();
+	}
+
+	private void PerformPoisonTick(LivingEntity ent) {
+		if (ent instanceof Player) {
+			PlayerStructure pd = PlayerStructure.GetPlayerStructure((Player)ent);
+			if (Buff.hasBuff(ent, "Poison") && pd.lastPoisonTick+getPoisonTickDelay(ent)<=TwosideKeeper.getServerTickTime()) {
+				CustomDamage.ApplyDamage(Buff.getBuff(ent, "Poison").getAmplifier(), null, ent, null, "POISON", CustomDamage.IGNOREDODGE|CustomDamage.TRUEDMG|CustomDamage.IGNORE_DAMAGE_TICK);
+				pd.lastPoisonTick=TwosideKeeper.getServerTickTime();
+			}
+			if (Buff.hasBuff(ent, "SHRAPNEL") && pd.lastShrapnelTick<=TwosideKeeper.getServerTickTime()) {
+				CustomDamage.ApplyDamage((Buff.getBuff(ent, "SHRAPNEL").getAmplifier()*2)*(1d-CustomDamage.getFireResistance(ent)), null, ent, null, "Shrapnel", CustomDamage.IGNOREDODGE|CustomDamage.TRUEDMG|CustomDamage.IGNORE_DAMAGE_TICK);
+				pd.lastShrapnelTick=TwosideKeeper.getServerTickTime();
+				SoundUtils.playLocalSound((Player)ent, Sound.ENTITY_GENERIC_EXTINGUISH_FIRE, 1.0f, 1.0f);
+				ent.getWorld().spawnParticle(Particle.LAVA, ent.getEyeLocation(), CustomDamage.GetHeartAmount(Buff.getBuff(ent, "SHRAPNEL").getAmplifier())*5);
+			}
+		} else {
+			LivingEntityStructure les = LivingEntityStructure.GetLivingEntityStructure(ent);
+			if (Buff.hasBuff(ent, "Poison") && les.lastPoisonTick+getPoisonTickDelay(ent)<=TwosideKeeper.getServerTickTime()) {
+				CustomDamage.ApplyDamage(Buff.getBuff(ent, "Poison").getAmplifier(), null, ent, null, "POISON", CustomDamage.IGNOREDODGE|CustomDamage.TRUEDMG|CustomDamage.IGNORE_DAMAGE_TICK);
+				les.lastPoisonTick=TwosideKeeper.getServerTickTime();
+			}
+			if (Buff.hasBuff(ent, "SHRAPNEL") && les.lastShrapnelTick<=TwosideKeeper.getServerTickTime()) {
+				CustomDamage.ApplyDamage((Buff.getBuff(ent, "SHRAPNEL").getAmplifier()*2)*(1d-CustomDamage.getFireResistance(ent)), null, ent, null, "Shrapnel", CustomDamage.IGNOREDODGE|CustomDamage.TRUEDMG|CustomDamage.IGNORE_DAMAGE_TICK);
+				les.lastShrapnelTick=TwosideKeeper.getServerTickTime();
+				//SoundUtils.playLocalSound((Player)ent, Sound.ENTITY_GENERIC_EXTINGUISH_FIRE, 1.0f, 1.0f);
+				SoundUtils.playGlobalSound(ent.getLocation(), Sound.ENTITY_GENERIC_EXTINGUISH_FIRE, 1.0f, 1.0f);
+				ent.getWorld().spawnParticle(Particle.LAVA, ent.getEyeLocation(), CustomDamage.GetHeartAmount(Buff.getBuff(ent, "SHRAPNEL").getAmplifier())*5);
+			}
+		}
+	}
+
+	private double getPoisonTickDelay(LivingEntity ent) {
+		if (CustomDamage.getPoisonResistance(ent)>0.9) {
+			return 200;
+		} else {
+			return (1d/(1d-CustomDamage.getPoisonResistance(ent)))*20;
+		}
+	}
+
+	private void createPotionParticles(LivingEntity l) {
+		if (l instanceof Player) {
+			PlayerStructure pd = PlayerStructure.GetPlayerStructure((Player)l);
+			if (pd.lastpotionparticles+100<TwosideKeeper.getServerTickTime()) {
+				List<org.bukkit.Color> colors = new ArrayList<org.bukkit.Color>();
+				for (String s : pd.buffs.keySet()) {
+					Buff b = pd.buffs.get(s);
+					if (b.getRemainingBuffTime()>0) {
+						colors.add(b.getBuffParticleColor());
+					}
+				}
+				if (colors.size()>0) {
+					for (int i=0;i<colors.size();i++) {
+						EntityUtils.createPotionEffectSwirls(l, colors.get(i), i*(100/colors.size()));
+					}
+				}
+				pd.lastpotionparticles=TwosideKeeper.getServerTickTime();
+			}
+		} else {
+			LivingEntityStructure les = LivingEntityStructure.GetLivingEntityStructure(l);
+			if (les.lastpotionparticles+100<TwosideKeeper.getServerTickTime()) {
+				List<org.bukkit.Color> colors = new ArrayList<org.bukkit.Color>();
+				for (String s : les.buffs.keySet()) {
+					Buff b = les.buffs.get(s);
+					if (b.getRemainingBuffTime()>0) {
+						colors.add(b.getBuffParticleColor());
+					}
+				}
+				if (colors.size()>0) {
+					for (int i=0;i<colors.size();i++) {
+						EntityUtils.createPotionEffectSwirls(l, colors.get(i), i*(100/colors.size()));
+					}
+				}
+				les.lastpotionparticles=TwosideKeeper.getServerTickTime();
+			}
+		}
 	}
 
 	public static void resetDamageQueue() {
@@ -439,8 +529,8 @@ final class runServerHeartbeat implements Runnable {
 	}
 
 	private void ModifyDasherSetSpeedMultiplier(Player p) {
-		if (ItemSet.GetTotalBaseAmount(GenericFunctions.getEquipment(p), p, ItemSet.DASHER)>0) {
-			double spdmult = ItemSet.GetTotalBaseAmount(GenericFunctions.getEquipment(p), p, ItemSet.DASHER)/100d;
+		if (ItemSet.GetTotalBaseAmount(p, ItemSet.DASHER)>0) {
+			double spdmult = ItemSet.GetTotalBaseAmount(p, ItemSet.DASHER)/100d;
 			aPlugin.API.setPlayerSpeedMultiplier(p, (float)(1.0f+spdmult));
 		}
 	}
@@ -522,13 +612,13 @@ final class runServerHeartbeat implements Runnable {
 
 	private void DasherFoodRegenPerk(Player p) {
 		if (p.isSprinting() && p.getFoodLevel()<20
-				&& ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getArmor(p), p, ItemSet.DASHER, 4)) {
+				&& ItemSet.HasSetBonusBasedOnSetBonusCount(p, ItemSet.DASHER, 4)) {
 			p.setFoodLevel(p.getFoodLevel()+1);
 		}
 	}
 
 	private void GivePartyNightVision(Player p) {
-		if (ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getArmor(p), p, ItemSet.RUDOLPH, 4)) {
+		if (ItemSet.HasSetBonusBasedOnSetBonusCount(p, ItemSet.RUDOLPH, 4)) {
 			if (!p.hasPotionEffect(PotionEffectType.NIGHT_VISION)) {
 				GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.NIGHT_VISION, Integer.MAX_VALUE, 1, p, true);
 			}
@@ -542,7 +632,7 @@ final class runServerHeartbeat implements Runnable {
 	}
 
 	private void ApplyCometRegenBonus(Player p) {
-		double regenbuff = ItemSet.GetTotalBaseAmount(GenericFunctions.getEquipment(p), p, ItemSet.COMET);
+		double regenbuff = ItemSet.GetTotalBaseAmount(p, ItemSet.COMET);
 		if (regenbuff>0) {
 			List<Player> partymembers = PartyManager.getPartyMembers(p);
 			for (Player pl : partymembers) {
@@ -557,7 +647,7 @@ final class runServerHeartbeat implements Runnable {
 		if (PlayerMode.isSlayer(p)) {
 			if (pd.lastsneak+50<=serverTickTime &&
 					p.isSneaking() &&
-					ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getBaubles(p), p, ItemSet.MOONSHADOW, 7)) {
+					ItemSet.HasSetBonusBasedOnSetBonusCount(p, ItemSet.MOONSHADOW, 7)) {
 				GenericFunctions.deAggroNearbyTargets(p);
 				GenericFunctions.applyStealth(p, true);
 			}
@@ -631,14 +721,14 @@ final class runServerHeartbeat implements Runnable {
 				if (ent instanceof Item && GenericFunctions.itemCanBeSuckedUp((Item)ent,p)) {
 					Item it = (Item)ent;
 					if (it.getPickupDelay()<=0) {
-						TwosideKeeper.log("(1)Item is "+it.getItemStack(), 0);
+						//TwosideKeeper.log("(1)Item is "+it.getItemStack(), 0);
 						events.PlayerManualPickupItemEvent ev = new events.PlayerManualPickupItemEvent(p, it.getItemStack());
 						Bukkit.getPluginManager().callEvent(ev);
-						TwosideKeeper.log("(2)Item is "+it.getItemStack(), 0);
+						//TwosideKeeper.log("(2)Item is "+it.getItemStack(), 0);
 						if (!ev.isCancelled()) {
-							TwosideKeeper.log("(3)Item is "+it.getItemStack(), 0);
+							//TwosideKeeper.log("(3)Item is "+it.getItemStack(), 0);
 					    	boolean handled = TwosideKeeper.AutoEquipItem(it.getItemStack(), p);
-							TwosideKeeper.log("(4)Item is "+it.getItemStack(), 0);
+							//TwosideKeeper.log("(4)Item is "+it.getItemStack(), 0);
 					    	if (!handled) {
 					    		ItemStack[] remaining = InventoryUtils.insertItemsInFilterCube(p, it.getItemStack());
 					    		if (remaining.length==0) {
@@ -647,6 +737,7 @@ final class runServerHeartbeat implements Runnable {
 					    			TwosideKeeper.PlayPickupParticle(p,it);
 					    			it.remove();
 					    		}
+					    		//TwosideKeeper.log("Remaining length: "+remaining.length, 0);
 					    	} else {
 								InventoryUpdateEvent.TriggerUpdateInventoryEvent(ev.getPlayer(),ev.getItemStack(),UpdateReason.PICKEDUPITEM);
 					    		TwosideKeeper.PlayPickupParticle(p,it);
@@ -838,14 +929,17 @@ final class runServerHeartbeat implements Runnable {
 			if (!ms.m.isValid() || ms.m instanceof Player) {
 				//TwosideKeeper.monsterdata.remove(data);
 				TwosideKeeper.ScheduleRemoval(TwosideKeeper.livingentitydata, ms);
+				TwosideKeeper.ScheduleRemoval(TwosideKeeper.chargezombies, id);
+				TwosideKeeper.ScheduleRemoval(TwosideKeeper.custommonsters, id);
 				TwosideKeeper.ScheduleRemoval(data, id);
 				TwosideKeeper.ScheduleRemoval(TwosideKeeper.habitat_data.startinglocs, id);
+				ms.m.setCustomName(ms.getOriginalName());
 				TwosideKeeper.log("Removed Monster Structure for "+id+".", 5);
 				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Removed Monster Structure Data.", (int)(System.nanoTime()-time));time=System.nanoTime();
 			} else {
 				AddEliteStructureIfOneDoesNotExist(ms);
 				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Add Elite Structure", (int)(System.nanoTime()-time));time=System.nanoTime();
-				if (ms.GetTarget()!=null && ms.GetTarget().isValid() && !ms.GetTarget().isDead() && ms.m.hasAI()) {
+				if (ms.GetTarget()!=null && ms.GetTarget().isValid() && !ms.GetTarget().isDead() && ms.m.hasAI() && !Dummy.isDummy(ms.m)) {
 					//Randomly move this monster a tiny bit in case they are stuck.
 					double xdir=((ms.m.getLocation().getX()>ms.GetTarget().getLocation().getX())?-0.25:0.25)+(Math.random()/8)-(Math.random()/8);
 					double zdir=((ms.m.getLocation().getZ()>ms.GetTarget().getLocation().getZ())?-0.25:0.25)+(Math.random()/8)-(Math.random()/8);
@@ -854,7 +948,14 @@ final class runServerHeartbeat implements Runnable {
 				}
 				ms.UpdateGlow();
 				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Update Glow", (int)(System.nanoTime()-time));time=System.nanoTime();
+				createPotionParticles(ms.m);
+				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Create Potion Particles", (int)(System.nanoTime()-time));time=System.nanoTime();
+				LivingEntityStructure.UpdateMobName(ms.m);
+				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Update Mob Names", (int)(System.nanoTime()-time));time=System.nanoTime();
+				PerformPoisonTick(ms.m);
+				TwosideKeeper.HeartbeatLogger.AddEntry("Monster Management - Perform Poison Tick", (int)(System.nanoTime()-time));time=System.nanoTime();
 			}
+			
 		}
 	}
 

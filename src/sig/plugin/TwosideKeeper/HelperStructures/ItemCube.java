@@ -7,7 +7,6 @@ import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.jgrapht.graph.DefaultEdge;
 
 import sig.plugin.TwosideKeeper.PlayerStructure;
 import sig.plugin.TwosideKeeper.TwosideKeeper;
@@ -34,7 +33,7 @@ public class ItemCube {
 		for (Player p : Bukkit.getOnlinePlayers()) {
 			if (checker==null || !p.equals(checker)) {
 				if (p.getOpenInventory()!=null && p.getOpenInventory().getTitle().contains("Item Cube #"+id)) {
-					TwosideKeeper.log("Updating inventory for player "+p.getName()+"; Inventory "+p.getOpenInventory().getTitle(), 0);
+					//TwosideKeeper.log("Updating inventory for player "+p.getName()+"; Inventory "+p.getOpenInventory().getTitle(), 0);
 					//This is an item cube. Check if it's the same number.
 					return p.getOpenInventory().getTopInventory();
 				}

@@ -67,6 +67,7 @@ import net.minecraft.server.v1_9_R1.TileEntityHopper;
 import sig.plugin.TwosideKeeper.ActionBarBuffUpdater;
 import sig.plugin.TwosideKeeper.Artifact;
 import sig.plugin.TwosideKeeper.AwakenedArtifact;
+import sig.plugin.TwosideKeeper.Buff;
 import sig.plugin.TwosideKeeper.CustomDamage;
 import sig.plugin.TwosideKeeper.EliteMonster;
 import sig.plugin.TwosideKeeper.MonsterController;
@@ -89,8 +90,11 @@ import sig.plugin.TwosideKeeper.HelperStructures.EliteMonsterLocationFinder;
 import sig.plugin.TwosideKeeper.HelperStructures.ItemSet;
 import sig.plugin.TwosideKeeper.HelperStructures.PlayerMode;
 import sig.plugin.TwosideKeeper.HelperStructures.WorldShop;
+import sig.plugin.TwosideKeeper.HelperStructures.Effects.WindSlash;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.ArrayUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.ArtifactUtils;
+import sig.plugin.TwosideKeeper.HelperStructures.Utils.BlockUtils;
+import sig.plugin.TwosideKeeper.HelperStructures.Utils.DebugUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.ItemCubeUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.ItemUtils;
 import sig.plugin.TwosideKeeper.HelperStructures.Utils.SoundUtils;
@@ -123,12 +127,7 @@ public class GenericFunctions {
 
 	public static ItemStack breakHardenedItem(ItemStack item, Player p) {
 
-		StackTraceElement[] stacktrace = new Throwable().getStackTrace();
-		StringBuilder stack = new StringBuilder("Mini stack tracer:");
-		for (int i=0;i<Math.min(10, stacktrace.length);i++) {
-			stack.append("\n"+stacktrace[i].getClassName()+": **"+stacktrace[i].getFileName()+"** "+stacktrace[i].getMethodName()+"():"+stacktrace[i].getLineNumber());
-		}
-		TwosideKeeper.log("Trace:"+stack, 0);
+		showStackTrace();
 		int break_count = getHardenedItemBreaks(item);
 		if (break_count>0) {
 			ItemMeta m = item.getItemMeta();
@@ -187,6 +186,10 @@ public class GenericFunctions {
 			TwosideKeeper.log("Return null here.", 0);
 			return null;
 		}
+	}
+
+	private static void showStackTrace() {
+		DebugUtils.showStackTrace();
 	}
 
 	public static ItemStack convertArtifactToDust(ItemStack item) {
@@ -524,7 +527,7 @@ public class GenericFunctions {
 				type.getType()!=Material.AIR) {
 			if (type.hasItemMeta() &&
 					type.getItemMeta().hasDisplayName()) {
-				return type.getItemMeta().getDisplayName()+((ItemSet.isSetItem(type) && displayTier)?" (T"+ItemSet.GetTier(type)+")":"");
+				return type.getItemMeta().getDisplayName()+((ItemSet.isSetItem(type) && displayTier)?" (T"+ItemSet.GetItemTier(type)+")":"");
 			}
 			switch (type.getType()) {
 				case ACACIA_DOOR_ITEM:{
@@ -2195,7 +2198,8 @@ public class GenericFunctions {
 			item.getType()!=Material.AIR && (item.getType().toString().contains("BOOTS") ||
 			item.getType().toString().contains("CHESTPLATE") ||
 			item.getType().toString().contains("LEGGINGS") ||
-			item.getType().toString().contains("HELMET"))) {
+			item.getType().toString().contains("HELMET") ||
+			item.getType().toString().contains("SHIELD"))) {
 			return true;
 		} else {
 			return false;
@@ -2291,8 +2295,8 @@ public class GenericFunctions {
 			((Guardian)m).isElder()) ||
 			m.getType()==EntityType.ENDER_DRAGON ||
 			m.getType()==EntityType.WITHER ||
-			LivingEntityStructure.getLivingEntityStructure(m).getLeader() ||
-			LivingEntityStructure.getLivingEntityStructure(m).getElite()) {
+			LivingEntityStructure.GetLivingEntityStructure(m).getLeader() ||
+			LivingEntityStructure.GetLivingEntityStructure(m).getElite()) {
 				return true;
 			} else {
 				return false;
@@ -2510,7 +2514,7 @@ public class GenericFunctions {
 	
 	public static void ApplyDeathMark(LivingEntity ent) {
 		int stackamt = 0;
-		if (ent.hasPotionEffect(PotionEffectType.UNLUCK)) {
+		/*if (ent.hasPotionEffect(PotionEffectType.UNLUCK)) {
 			//Add to the current stack of unluck.
 			for (PotionEffect pe : ent.getActivePotionEffects()) {
 				if (pe.getType().equals(PotionEffectType.UNLUCK)) {
@@ -2527,8 +2531,22 @@ public class GenericFunctions {
 			TwosideKeeper.log("Death mark stack is now T1", 5);
 			ent.addPotionEffect(new PotionEffect(PotionEffectType.UNLUCK,99,0));
 			stackamt=1;
-		}
+		}*/
 		//Modify the color of the name of the monster.
+		HashMap<String,Buff> buffdata = Buff.getBuffData(ent);
+		if (Buff.hasBuff(ent, "DeathMark")) {
+			Buff deathmarkBuff = buffdata.get("DeathMark");
+			deathmarkBuff.increaseStacks(1);
+			deathmarkBuff.refreshDuration(99);
+			stackamt = deathmarkBuff.getAmplifier();
+		} else {
+			buffdata.put("DeathMark", new Buff("Death Mark",99,1,org.bukkit.Color.MAROON,ChatColor.DARK_RED+"☠",false));
+			stackamt = 1;
+		}
+		RefreshBuffColor(ent, stackamt);
+	}
+
+	public static void RefreshBuffColor(LivingEntity ent, int stackamt) {
 		if (ent instanceof LivingEntity) {
 			LivingEntity m = (LivingEntity)ent;
 			m.setCustomNameVisible(true);
@@ -2541,34 +2559,19 @@ public class GenericFunctions {
 	}
 	
 	public static int GetDeathMarkAmt(LivingEntity ent) {
-		if (ent.hasPotionEffect(PotionEffectType.UNLUCK)) {
+		/*if (ent.hasPotionEffect(PotionEffectType.UNLUCK)) {
 			//Add to the current stack of unluck.
 			for (PotionEffect pe : ent.getActivePotionEffects()) {
 				if (pe.getType().equals(PotionEffectType.UNLUCK)) {
 					return pe.getAmplifier()+1;
 				}
 			}
-		}
-		return 0;
-	}
-	
-	public static void ResetMobName(LivingEntity ent) {
-		if (ent instanceof LivingEntity) {
-			LivingEntity m = (LivingEntity)ent;
-			m.setCustomNameVisible(false);
-			if (m.getCustomName()!=null) {
-				m.setCustomName(ChatColor.stripColor(GenericFunctions.getDisplayName(m)));
-				if (m.getCustomName().contains("Dangerous")) {
-					m.setCustomName(ChatColor.DARK_AQUA+m.getCustomName());
-				}
-				if (m.getCustomName().contains("Deadly")) {
-					m.setCustomName(ChatColor.GOLD+m.getCustomName());
-				}
-				if (m.getCustomName().contains("Hellfire")) {
-					m.setCustomName(ChatColor.DARK_RED+m.getCustomName());
-				}
-				CustomDamage.appendDebuffsToName(m);
-			}
+		}*/
+		HashMap<String,Buff> buffdata = Buff.getBuffData(ent);
+		if (Buff.hasBuff(ent, "DeathMark")) {
+			return buffdata.get("DeathMark").getAmplifier();
+		} else {
+			return 0;
 		}
 	}
 	
@@ -2588,7 +2591,7 @@ public class GenericFunctions {
 				}
 				p.sendMessage(ChatColor.DARK_AQUA+"A level of "+ChatColor.YELLOW+"Mending"+ChatColor.DARK_AQUA+" has been knocked off of your "+((item.hasItemMeta() && item.getItemMeta().hasDisplayName())?item.getItemMeta().getDisplayName():UserFriendlyMaterialName(item)));
 			}
-			if (infinitylv>0 && Math.random()<=0.005*(isHarvestingTool(item)?0.75:1d)) {
+			if (infinitylv>0 && Math.random()<=0.0015*(isHarvestingTool(item)?0.75:1d)) {
 				infinitylv--;
 				if (infinitylv>0) {
 					item.addUnsafeEnchantment(Enchantment.ARROW_INFINITE, infinitylv);
@@ -2602,10 +2605,10 @@ public class GenericFunctions {
 	}
 			
 	public static boolean HasFullRangerSet(Player p) {
-		return ItemSet.hasFullSet(GenericFunctions.getEquipment(p), p, ItemSet.ALIKAHN) ||
-				ItemSet.hasFullSet(GenericFunctions.getEquipment(p), p, ItemSet.DARNYS) ||
-				ItemSet.hasFullSet(GenericFunctions.getEquipment(p), p, ItemSet.JAMDAK) ||
-				ItemSet.hasFullSet(GenericFunctions.getEquipment(p), p, ItemSet.LORASAADI);
+		return ItemSet.hasFullSet(p, ItemSet.ALIKAHN) ||
+				ItemSet.hasFullSet(p, ItemSet.DARNYS) ||
+				ItemSet.hasFullSet(p, ItemSet.JAMDAK) ||
+				ItemSet.hasFullSet(p, ItemSet.LORASAADI);
 		/*int rangerarmort1 = 0; //Count the number of each tier of sets. //LEGACY CODE.
 		int rangerarmort2 = 0;
 		int rangerarmort3 = 0;
@@ -2872,7 +2875,7 @@ public class GenericFunctions {
 				Bukkit.getPluginManager().callEvent(ev);
 				if (!ev.isCancelled()) {
 					pd.last_dodge=TwosideKeeper.getServerTickTime();
-					aPlugin.API.sendCooldownPacket(p, p.getEquipment().getItemInMainHand(), 100);
+					aPlugin.API.sendCooldownPacket(p, p.getEquipment().getItemInMainHand(), GetModifiedCooldown(TwosideKeeper.DODGE_COOLDOWN,p));
 					SoundUtils.playLocalSound(p, Sound.ENTITY_DONKEY_CHEST, 1.0f, 1.0f);
 					
 					int dodgeduration = 20;
@@ -3049,7 +3052,7 @@ public class GenericFunctions {
 		} else
 		if (entity instanceof LivingEntity) {
 			LivingEntity m = (LivingEntity)entity;
-			LivingEntityStructure md = LivingEntityStructure.getLivingEntityStructure(m);
+			LivingEntityStructure md = LivingEntityStructure.GetLivingEntityStructure(m);
 			if (damager!=null) {
 				if (damager instanceof Projectile) {
 					if (CustomDamage.getDamagerEntity(damager)!=null) {
@@ -3094,7 +3097,7 @@ public class GenericFunctions {
 		} else
 		if (entity instanceof LivingEntity) {
 			LivingEntity m = (LivingEntity)entity;
-			LivingEntityStructure md = LivingEntityStructure.getLivingEntityStructure(m);
+			LivingEntityStructure md = LivingEntityStructure.GetLivingEntityStructure(m);
 			if (damager!=null) {
 				if (damager instanceof Player) {
 					Player p = (Player)damager;
@@ -3131,7 +3134,7 @@ public class GenericFunctions {
 		} else
 		if (entity instanceof LivingEntity) {
 			LivingEntity m = (LivingEntity)entity;
-			LivingEntityStructure md = LivingEntityStructure.getLivingEntityStructure(m);
+			LivingEntityStructure md = LivingEntityStructure.GetLivingEntityStructure(m);
 			if (damager!=null) {
 				if (damager instanceof Projectile) {
 					if (CustomDamage.getDamagerEntity(damager)!=null) {
@@ -3310,14 +3313,17 @@ public class GenericFunctions {
 	}
 	
 	public static ItemStack UpdateItemLore(ItemStack item) {
+		//TwosideKeeper.log("Queue Update Item Lore for "+item, 0);
 		if (RemoveInvalidItem(item)) {
 			return item;
 		}
 		if (ItemSet.isSetItem(item)) {
+			//TwosideKeeper.log("Is Set Item Check", 0);
 			//Update the lore. See if it's hardened. If it is, we will save just that piece.
 			//Save the tier and type as well.
-			ItemSet set = ItemSet.GetSet(item);
-			int tier = ItemSet.GetTier(item);
+			ItemSet set = ItemSet.GetItemSet(item);
+			//TwosideKeeper.log("Set is "+set, 0);
+			int tier = ItemSet.GetItemTier(item);
 			item = UpdateSetLore(set,tier,item); 
 		}
 		UpdateOldRangerPieces(item);
@@ -3657,9 +3663,8 @@ public class GenericFunctions {
 			pd.slayermodehp = p.getMaxHealth();
 			
 			ItemStack[] equips = p.getEquipment().getArmorContents();
-			ItemStack[] hotbar = GenericFunctions.getBaubles(p);
 			
-			if (ItemSet.HasSetBonusBasedOnSetBonusCount(hotbar, p, ItemSet.GLADOMAIN, 5) && 
+			if (ItemSet.HasSetBonusBasedOnSetBonusCount(p, ItemSet.GLADOMAIN, 5) && 
 					pd.lastlifesavertime+GenericFunctions.GetModifiedCooldown(TwosideKeeper.LIFESAVER_COOLDOWN, p)<=TwosideKeeper.getServerTickTime()) {
 				pd.lastlifesavertime=TwosideKeeper.getServerTickTime();
 				RevivePlayer(p,p.getMaxHealth());
@@ -3698,7 +3703,6 @@ public class GenericFunctions {
 		return revived;
 	}
 
-	//TODO Fix Bauble Breaking.
 	public static void RandomlyBreakBaubles(Player p) {
 		/*for (int i=0;i<9;i++) {
 			ItemSet set = ItemSet.GetSet(hotbar[i]);
@@ -3718,7 +3722,7 @@ public class GenericFunctions {
 			Inventory inv = d.getInventory();
 			for (int i=0;i<inv.getContents().length;i++) {
 				ItemStack bauble = inv.getContents()[i];
-					ItemSet set = ItemSet.GetSet(bauble);
+					ItemSet set = ItemSet.GetItemSet(bauble);
 					if (set!=null &&
 							(set==ItemSet.GLADOMAIN ||
 							set==ItemSet.MOONSHADOW ||
@@ -3726,16 +3730,16 @@ public class GenericFunctions {
 							set==ItemSet.WOLFSBANE)) {
 						double basechance = 1/8d;
 						if (set==ItemSet.WOLFSBANE) {
-							basechance += 0.0d * ItemSet.GetTier(bauble);
+							basechance += 0.0d * ItemSet.GetItemTier(bauble);
 						}
 						if (set==ItemSet.ALUSTINE) {
-							basechance += 1/16d * ItemSet.GetTier(bauble);
+							basechance += 1/16d * ItemSet.GetItemTier(bauble);
 						}
 						if (set==ItemSet.MOONSHADOW) {
-							basechance += 1/8d * ItemSet.GetTier(bauble);
+							basechance += 1/8d * ItemSet.GetItemTier(bauble);
 						}
 						if (set==ItemSet.GLADOMAIN) {
-							basechance += 1/4d * ItemSet.GetTier(bauble);
+							basechance += 1/4d * ItemSet.GetItemTier(bauble);
 						}
 						if (Math.random()<=basechance) {
 							if (GenericFunctions.isHardenedItem(bauble)) {
@@ -3816,6 +3820,10 @@ public class GenericFunctions {
 	}
 	
 	public static void DealExplosionDamageToEntities(Location l, double basedmg, double range, Entity damager) {
+		DealExplosionDamageToEntities(l, basedmg, range, damager, "Explosion");
+	}
+	
+	public static void DealExplosionDamageToEntities(Location l, double basedmg, double range, Entity damager, String reason) {
 		//nearbyentities.addAll();
 		final double rangeSquared=range*range;
 		for (Entity ent: l.getWorld().getNearbyEntities(l, range, range, range)) {
@@ -3828,7 +3836,7 @@ public class GenericFunctions {
 				TwosideKeeper.log("dmg mult is "+damage_mult,4);
 				dmg = basedmg * damage_mult;
 				if (ent instanceof Player) {TwosideKeeper.log("Damage is "+dmg, 5);}
-				CustomDamage.ApplyDamage(dmg, damager, (LivingEntity)ent, null, "Explosion", CustomDamage.NONE);
+				CustomDamage.ApplyDamage(dmg, damager, (LivingEntity)ent, null, reason, CustomDamage.NONE);
 				//subtractHealth((LivingEntity)nearbyentities.get(i),null,NewCombat.CalculateDamageReduction(dmg, (LivingEntity)nearbyentities.get(i), null));
 			}
 		}
@@ -3919,7 +3927,7 @@ public class GenericFunctions {
 				GlowAPI.setGlowing(m, color, p);
 			}
 		}*/
-		LivingEntityStructure.getLivingEntityStructure(m).setGlobalGlow(color);
+		LivingEntityStructure.GetLivingEntityStructure(m).setGlobalGlow(color);
 	}
 	
 	public static void DealDamageToNearbyPlayers(Location l, double basedmg, int range, boolean knockup, double knockupamt, Entity damager, String reason, boolean truedmg) {
@@ -3938,6 +3946,9 @@ public class GenericFunctions {
 		}
 	}
 	
+	/**
+	 * ONLY FOR BLITZEN LIGHTNING STRIKE
+	 */
 	public static void DealDamageToNearbyMobs(Location l, double basedmg, int range, Entity damager, int flags) {
 		List<LivingEntity> nearbyentities = getNearbyMobs(l,range);
 		for (LivingEntity ent : nearbyentities) {
@@ -3946,11 +3957,17 @@ public class GenericFunctions {
 			}
 		}
 	}
-	
+
+	/**
+	 * Line Drive variant.
+	 */
 	public static void DealDamageToNearbyMobs(Location l, double basedmg, int range, boolean knockup, double knockupamt, Entity damager, ItemStack weapon, boolean isLineDrive) {
 		DealDamageToNearbyMobs(l,basedmg,range,knockup,knockupamt,damager,weapon,isLineDrive,(isLineDrive)?"Line Drive":null);
 	}
 
+	/**
+	 * Use this to customize dealing damage to nearby mobs.
+	 */
 	public static void DealDamageToNearbyMobs(Location l, double basedmg, double range, boolean knockup, double knockupamt, Entity damager, ItemStack weapon, boolean isLineDrive, String reason) {
 		Collection<Entity> ents = l.getWorld().getNearbyEntities(l, range, range, range);
 		//We cleared the non-living entities, deal damage to the rest.
@@ -4037,7 +4054,7 @@ public class GenericFunctions {
 	}
 
 	public static boolean isEliteMonster(LivingEntity m) {
-		LivingEntityStructure md = LivingEntityStructure.getLivingEntityStructure(m);
+		LivingEntityStructure md = LivingEntityStructure.GetLivingEntityStructure(m);
 		return md.getElite();
 	}
 
@@ -4270,7 +4287,7 @@ public class GenericFunctions {
 
 	public static void ApplySwiftAegis(Player p) {
 		PlayerStructure pd = PlayerStructure.GetPlayerStructure(p);
-		int swiftaegislv=(int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(GenericFunctions.getEquipment(p), p, ItemSet.DARNYS, 4, 4);
+		int swiftaegislv=(int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(p, ItemSet.DARNYS, 4, 4);
 		/*if (swiftaegislv>0) {
 			TwosideKeeper.log("Applying "+swiftaegislv+" levels of Swift Aegis.",5);
 			int resistancelv = 0;
@@ -4375,6 +4392,7 @@ public class GenericFunctions {
 					if (GenericFunctions.isBadEffect(pe.getType())) {
 						type=pe.getType();
 						level=pe.getAmplifier();
+						break;
 					}
 				}
 				if (Math.random()<=removechance/100) {
@@ -4386,6 +4404,20 @@ public class GenericFunctions {
 			}
 			pd.lasteffectlist.clear();
 			pd.lasteffectlist.addAll(p.getActivePotionEffects());
+			HashMap<String,Buff> buffdata = Buff.getBuffData(p);
+			if (pd.lastbufflist.size()<buffdata.size()) {
+				for (String key : buffdata.keySet()) {
+					Buff b = buffdata.get(key);
+					if (b.isDebuff()) {
+						if (Math.random()<=removechance/100 && Buff.buffCanBeRemoved()) {
+							Buff.removeBuff(p, key);
+							p.sendMessage(ChatColor.DARK_GRAY+"You successfully resisted the application of "+ChatColor.WHITE+GenericFunctions.CapitalizeFirstLetters(b.getDisplayName().replace("_", " ")));
+						}
+					}
+				}
+			}
+			pd.lastbufflist.clear();
+			pd.lastbufflist.putAll(buffdata);
 		}
 	}
 
@@ -4493,7 +4525,7 @@ public class GenericFunctions {
 		Bukkit.getPluginManager().callEvent(ev);
 		if (!ev.isCancelled()) {
 			PlayerStructure pd = PlayerStructure.GetPlayerStructure(p);
-			boolean ex_version = ItemSet.hasFullSet(GenericFunctions.getEquipment(p), p, ItemSet.PANROS);
+			boolean ex_version = ItemSet.hasFullSet(p, ItemSet.PANROS);
 			Vector facing = p.getLocation().getDirection();
 			if (!second_charge) {
 				facing = p.getLocation().getDirection().setY(0);
@@ -4545,12 +4577,7 @@ public class GenericFunctions {
 						for (int j=0;j<50;j++) {
 							newpos.getWorld().playEffect(newpos, Effect.FLAME, 60);
 						}
-						if (newpos2.getBlock().getType()!=Material.AIR && 
-								!newpos2.getBlock().isLiquid() &&
-								!(newpos2.getBlock().getType()==Material.STEP) &&
-								!(newpos2.getBlock().getType()==Material.WOOD_STEP) &&
-								!(newpos2.getBlock().getType()==Material.PURPUR_SLAB) &&
-								!(newpos2.getBlock().getType()==Material.STONE_SLAB2)) {
+						if (!BlockUtils.isPassThrough(newpos2)) {
 							break;
 						}
 						Bukkit.getScheduler().scheduleSyncDelayedTask(Bukkit.getPluginManager().getPlugin("TwosideKeeper"), new Runnable() {
@@ -4585,16 +4612,16 @@ public class GenericFunctions {
 				aPlugin.API.sendCooldownPacket(player, name, GetModifiedCooldown(TwosideKeeper.ASSASSINATE_COOLDOWN,player));
 			}
 			pd.lastassassinatetime=TwosideKeeper.getServerTickTime();
-			if (ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getBaubles(player), player, ItemSet.WOLFSBANE, 5)) {
-				GenericFunctions.addIFrame(player, (int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(GenericFunctions.getBaubles(player), player, ItemSet.WOLFSBANE, 5, 4));
+			if (ItemSet.HasSetBonusBasedOnSetBonusCount(player, ItemSet.WOLFSBANE, 5)) {
+				GenericFunctions.addIFrame(player, (int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(player, ItemSet.WOLFSBANE, 5, 4));
 			} else {
 				GenericFunctions.addIFrame(player, 10);
 			}
-			if (ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getBaubles(player), player, ItemSet.WOLFSBANE, 3)) {
+			if (ItemSet.HasSetBonusBasedOnSetBonusCount(player, ItemSet.WOLFSBANE, 3)) {
 				GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.SPEED, 100, 4, player);
-				GenericFunctions.addSuppressionTime(target, (int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(GenericFunctions.getBaubles(player), player, ItemSet.WOLFSBANE, 3, 3));
+				GenericFunctions.addSuppressionTime(target, (int)ItemSet.TotalBaseAmountBasedOnSetBonusCount(player, ItemSet.WOLFSBANE, 3, 3));
 			}
-			if (ItemSet.HasSetBonusBasedOnSetBonusCount(GenericFunctions.getBaubles(player), player, ItemSet.WOLFSBANE, 7) &&
+			if (ItemSet.HasSetBonusBasedOnSetBonusCount(player, ItemSet.WOLFSBANE, 7) &&
 					target.getLocation().distanceSquared(originalloc)<=25) {
 				pd.lastassassinatetime = TwosideKeeper.getServerTickTime()-GetModifiedCooldown(TwosideKeeper.ASSASSINATE_COOLDOWN,player)+40;
 				if (name!=Material.SKULL_ITEM || pd.lastlifesavertime+GetModifiedCooldown(TwosideKeeper.LIFESAVER_COOLDOWN,player)<TwosideKeeper.getServerTickTime()) { //Don't overwrite life saver cooldowns.
@@ -4683,8 +4710,8 @@ public class GenericFunctions {
 	}
 
 	public static void DamageRandomTool(Player p) {
-		if (ItemSet.GetSetCount(GenericFunctions.getEquipment(p), ItemSet.LORASYS, p)>=1 &&
-		ItemSet.GetBaubleTier(p)>=27 && ItemSet.GetTier(p.getEquipment().getItemInMainHand())>=3) {
+		if (ItemSet.GetSetCount(ItemSet.LORASYS, p)>=1 &&
+		ItemSet.GetBaubleTier(p)>=27 && ItemSet.GetItemTier(p.getEquipment().getItemInMainHand())>=3) {
 			return;
 		} else {
 			if (!aPlugin.API.isAFK(p)) {
@@ -4717,8 +4744,8 @@ public class GenericFunctions {
 	}
 	
 	public static boolean isSpecialGlowMonster(Monster m) {
-		return LivingEntityStructure.getLivingEntityStructure(m).isLeader ||
-		LivingEntityStructure.getLivingEntityStructure(m).isElite;
+		return LivingEntityStructure.GetLivingEntityStructure(m).isLeader ||
+		LivingEntityStructure.GetLivingEntityStructure(m).isElite;
 	}
 	
 	public static boolean isSuppressed(Entity ent) {
@@ -4764,7 +4791,7 @@ public class GenericFunctions {
 		}
 		if (ent instanceof LivingEntity) {
 			//MonsterStructure.getMonsterStructure((Monster)ent).setGlobalGlow(GlowAPI.Color.BLACK);
-			LivingEntityStructure.getLivingEntityStructure((LivingEntity)ent).UpdateGlow();
+			LivingEntityStructure.GetLivingEntityStructure((LivingEntity)ent).UpdateGlow();
 		} else {
 			GlowAPI.setGlowing(ent, GlowAPI.Color.BLACK, Bukkit.getOnlinePlayers());
 		}
@@ -5076,7 +5103,18 @@ public class GenericFunctions {
 							}
 							GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.SLOW, 20*15, poisonlv, ent);
 						}
-						if (ent.hasPotionEffect(PotionEffectType.BLINDNESS)) {
+						if (Buff.hasBuff(ent, "Poison")) {
+							Buff b = Buff.getBuff(ent, "Poison");
+							int poisonlv = b.getAmplifier();
+							long poisondur = b.getRemainingBuffTime();
+							totalpoisonlv+=poisonlv+1;
+							if (poisondur<20*15) {
+								//GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.POISON, 20*15, poisonlv, ent, true);
+								b.refreshDuration(20*15);
+							}
+							GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.SLOW, 20*15, poisonlv, ent);
+						}
+						/*if (ent.hasPotionEffect(PotionEffectType.BLINDNESS)) {
 							int poisonlv = GenericFunctions.getPotionEffectLevel(PotionEffectType.BLINDNESS, ent);
 							int poisondur = GenericFunctions.getPotionEffectDuration(PotionEffectType.BLINDNESS, ent); 
 							totalpoisonlv+=poisonlv+1;
@@ -5084,7 +5122,7 @@ public class GenericFunctions {
 								GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.BLINDNESS, 20*15, poisonlv, ent, true);
 							}
 							GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.SLOW, 20*15, poisonlv, ent);
-						}
+						}*/
 						CustomDamage.ApplyDamage(totalpoisonlv*10, p, ent, null, "Siphon", CustomDamage.TRUEDMG|CustomDamage.IGNOREDODGE|CustomDamage.IGNORE_DAMAGE_TICK);
 					}
 					CustomDamage.setAbsorptionHearts(p, CustomDamage.getAbsorptionHearts(p)+totalpoisonstacks*4);
@@ -5142,5 +5180,40 @@ public class GenericFunctions {
 		CraftHopper BukkitHopper = (CraftHopper) hopper;
 		TileEntityHopper NMSHopper = (TileEntityHopper) BukkitHopper.getTileEntity();
 		NMSHopper.a(title);
+	}
+
+	public static void performWindSlash(Player p) {
+		//Consume wind charge stacks.
+		if (Buff.hasBuff(p, "WINDCHARGE")) {
+			PlayerStructure pd = PlayerStructure.GetPlayerStructure(p);
+			if (pd.lastusedwindslash+GetModifiedCooldown(TwosideKeeper.WINDSLASH_COOLDOWN,p)<=TwosideKeeper.getServerTickTime()) {
+				int windcharges = Buff.getBuff(p, "WINDCHARGE").getAmplifier();	
+				Buff.removeBuff(p, "WINDCHARGE");
+				TwosideKeeper.windslashes.add(
+						new WindSlash(p.getLocation(),p,ItemSet.GetItemTier(p.getEquipment().getItemInMainHand())*windcharges,20*10));
+				p.setVelocity(p.getLocation().getDirection().multiply(-0.7f-(0.01f*(windcharges/10))*((p.isOnGround())?1d:2d)));
+				GenericFunctions.sendActionBarMessage(p, "", true);
+				aPlugin.API.sendCooldownPacket(p, p.getEquipment().getItemInMainHand(), GetModifiedCooldown(TwosideKeeper.WINDSLASH_COOLDOWN,p));
+				pd.lastusedwindslash = TwosideKeeper.getServerTickTime();
+			}
+		} //TILTED /////////////////\\\\\\\\\\\\\\\\\\\\\\\\\////////////////
+	}
+
+	public static void knockupEntities(double amt, LivingEntity...ents) {
+		for (LivingEntity l : ents) {
+			l.setVelocity(new Vector(l.getVelocity().getX(),amt,l.getVelocity().getZ()));
+		}
+	}
+
+	public static void performBeastWithin(Player p) {
+		PlayerStructure pd = PlayerStructure.GetPlayerStructure(p);
+		if (ItemSet.hasFullSet(p, ItemSet.LUCI) && pd.lastusedbeastwithin+GetModifiedCooldown(TwosideKeeper.BEASTWITHIN_COOLDOWN,p)<=TwosideKeeper.getServerTickTime()) {
+			GenericFunctions.logAndApplyPotionEffectToEntity(PotionEffectType.NIGHT_VISION, 20, 1, p);
+			SoundUtils.playGlobalSound(p.getLocation(), Sound.ENTITY_GENERIC_DRINK, 1.0f, 1.0f);
+			Buff.addBuff(p, "BEASTWITHIN", new Buff("Beast Within",(ItemSet.GetItemTier(p.getEquipment().getItemInMainHand())+ItemSet.BEASTWITHIN_DURATION)*20,1,org.bukkit.Color.MAROON,"♦",true));
+			GenericFunctions.sendActionBarMessage(p, "", true);
+			aPlugin.API.sendCooldownPacket(p, p.getEquipment().getItemInMainHand(), GetModifiedCooldown(TwosideKeeper.BEASTWITHIN_COOLDOWN,p));
+			pd.lastusedbeastwithin=TwosideKeeper.getServerTickTime();
+		}
 	}
 }
